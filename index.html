@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 스마트 안경 감지기</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .card {
+      background-color: #1e293b;
+      padding: 28px;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 22px;
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
+    p.desc {
+      color: #94a3b8;
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+    #webcam-container {
+      margin: 0 auto 20px;
+      width: 280px;
+      height: 280px;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 3px solid #38bdf8;
+      background-color: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #result-box {
+      font-size: 20px;
+      font-weight: 700;
+      padding: 14px;
+      border-radius: 12px;
+      background-color: #334155;
+      margin-bottom: 18px;
+      min-height: 28px;
+    }
+    .bar-wrap {
+      margin-bottom: 10px;
+      text-align: left;
+    }
+    .bar-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: #cbd5e1;
+      margin-bottom: 4px;
+    }
+    .bar-bg {
+      background-color: #0f172a;
+      height: 8px;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      transition: width 0.15s ease;
+    }
+    button {
+      background: linear-gradient(90deg, #0284c7, #2563eb);
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      font-size: 16px;
+      font-weight: 600;
+      border-radius: 12px;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity 0.2s;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>👓 안경 착용 인식 AI</h1>
+    <p class="desc">웹캠으로 안경 착용 여부를 실시간 판별합니다.</p>
+    
+    <div id="webcam-container"></div>
+    <div id="result-box">카메라 시작을 눌러주세요</div>
+    
+    <div id="label-container"></div>
+
+    <button id="start-btn" type="button" onclick="init()">카메라 켜기</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+  <script type="text/javascript">
+    const URL = "./model/";
+    let model, webcam, labelContainer, maxPredictions;
+
+    async function init() {
+      const btn = document.getElementById("start-btn");
+      btn.disabled = true;
+      btn.innerText = "모델 불러오는 중...";
+
+      const modelURL = URL + "model.json";
+      const metadataURL = URL + "metadata.json";
+
+      model = await tmImage.load(modelURL, metadataURL);
+      maxPredictions = model.getTotalClasses();
+
+      const flip = true;
+      webcam = new tmImage.Webcam(280, 280, flip);
+      await webcam.setup();
+      await webcam.play();
+      window.requestAnimationFrame(loop);
+
+      document.getElementById("webcam-container").appendChild(webcam.canvas);
+      labelContainer = document.getElementById("label-container");
+      labelContainer.innerHTML = "";
+      
+      for (let i = 0; i < maxPredictions; i++) {
+        const wrap = document.createElement("div");
+        wrap.className = "bar-wrap";
+        wrap.innerHTML = `
+          <div class="bar-info">
+            <span id="label-name-${i}">-</span>
+            <span id="label-val-${i}">0%</span>
+          </div>
+          <div class="bar-bg"><div class="bar-fill" id="bar-fill-${i}"></div></div>
+        `;
+        labelContainer.appendChild(wrap);
+      }
+
+      btn.style.display = "none";
+      document.getElementById("result-box").innerText = "인식 중...";
+    }
+
+    async function loop() {
+      webcam.update();
+      await predict();
+      window.requestAnimationFrame(loop);
+    }
+
+    async function predict() {
+      const prediction = await model.predict(webcam.canvas);
+      let bestClass = "";
+      let highestProb = -1;
+
+      for (let i = 0; i < maxPredictions; i++) {
+        const name = prediction[i].className;
+        const prob = prediction[i].probability;
+        const percent = (prob * 100).toFixed(0);
+
+        document.getElementById(`label-name-${i}`).innerText = name;
+        document.getElementById(`label-val-${i}`).innerText = `${percent}%`;
+        document.getElementById(`bar-fill-${i}`).style.width = `${percent}%`;
+
+        if (prob > highestProb) {
+          highestProb = prob;
+          bestClass = name;
+        }
+      }
+
+      const resBox = document.getElementById("result-box");
+      if (bestClass === "안경 착용") {
+        resBox.innerText = "👓 안경 착용 상태입니다.";
+        resBox.style.color = "#38bdf8";
+      } else if (bestClass === "미착용") {
+        resBox.innerText = "👀 안경을 착용하지 않았습니다.";
+        resBox.style.color = "#34d399";
+      } else if (bestClass === "자리 비움") {
+        resBox.innerText = "🪑 자리 비움";
+        resBox.style.color = "#94a3b8";
+      } else {
+        resBox.innerText = bestClass;
+        resBox.style.color = "#f8fafc";
+      }
+    }
+  </script>
+</body>
+</html>
